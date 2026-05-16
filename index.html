@@ -20,6 +20,7 @@
 <script type="text/babel" src="pages-dashboard.jsx"></script>
 <script type="text/babel" src="pages-transactions.jsx"></script>
 <script type="text/babel" src="pages-accounts-reports.jsx"></script>
+<script type="text/babel" src="pages-report-view.jsx"></script>
 <script type="text/babel" src="pages-invoice-data.jsx"></script>
 <script type="text/babel" src="pages-invoice-analytics.jsx"></script>
 <script type="text/babel" src="pages-invoice.jsx"></script>
@@ -37,8 +38,9 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const ledger = useLedger();
-  const [route, setRoute] = React.useState('dashboard'); // dashboard | add | transfer | transactions | accounts | account:<id> | reports | budgets | settings
+  const [route, setRoute] = React.useState('dashboard');
   const [addPrefill, setAddPrefill] = React.useState(null);
+  const [showReport, setShowReport] = React.useState(false);
 
   // apply tweaks to root
   React.useEffect(() => {
@@ -90,7 +92,7 @@ function App() {
   else if (route === 'reports') page = <ReportsPage ledger={ledger} />;
   else if (route === 'budgets') page = <BudgetsPage ledger={ledger} />;
   else if (route === 'invoice') page = <InvoicePage ledger={ledger} onNav={nav} />;
-  else if (route === 'settings') page = <SettingsPage ledger={ledger} />;
+  else if (route === 'settings') page = <SettingsPage ledger={ledger} onOpenReport={() => setShowReport(true)} />;
 
   // density
   const densityStyles = t.density === 'compact'
@@ -137,6 +139,8 @@ function App() {
       <main className="main" style={densityStyles}>
         {page}
       </main>
+
+      {showReport && <ReportView ledger={ledger} onClose={() => setShowReport(false)} />}
 
       <TweaksPanel>
         <TweakSection label="主題 Theme" />

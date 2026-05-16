@@ -513,19 +513,155 @@ function BudgetEditor({ ledger, budgetId, onClose }) {
 }
 
 // ── SETTINGS ───────────────────────────────────────────────────────────
-function SettingsPage({ ledger }) {
+function SettingsPage({ ledger, onOpenReport }) {
   const { state } = ledger;
   const [fx, setFx] = useStateA(String(state.fxRate));
+  const [importPreview, setImportPreview] = useStateA(null);
+
+  // ── JSON 匯出 ──
+  const exportJSON = () => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: state,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'ledger-backup-' + ymd(new Date()) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✓ 已下載備份');
+  };
+
+  // ── JSON 匯入 ──
+  const handleJSONUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        const data = parsed.data || parsed; // 容許舊格式
+        if (!data.accounts || !data.transactions) {
+          throw new Error('檔案結構不正確（缺少 accounts 或 transactions）');
+        }
+        setImportPreview({
+          data,
+          stats: {
+            accounts: data.accounts?.length || 0,
+            transactions: data.transactions?.length || 0,
+            budgets: data.budgets?.length || 0,
+            recurring: data.recurring?.length || 0,
+          },
+          exportedAt: parsed.exportedAt,
+          fileName: file.name,
+        });
+      } catch (err) {
+        showToast('✗ 檔案格式錯誤：' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // 清空，方便重複選同檔
+  };
+
+  const doImport = (mode) => {
+    if (!importPreview) return;
+    const incoming = importPreview.data;
+    if (mode === 'replace') {
+      ledger.setState({
+        accounts: incoming.accounts || [],
+        transactions: incoming.transactions || [],
+        budgets: incoming.budgets || [],
+        recurring: incoming.recurring || [],
+        fxRate: incoming.fxRate || 31.8,
+        carrier: incoming.carrier || { connected: false, autoSync: false },
+      });
+      showToast('✓ 已取代所有資料');
+    } else {
+      // 合併：用 id 為主鍵，舊資料保留、新資料疊加
+      ledger.setState((s) => {
+        const merge = (a, b, key = 'id') => {
+          const ids = new Set(a.map((x) => x[key]));
+          return [...a, ...(b || []).filter((x) => !ids.has(x[key]))];
+        };
+        return {
+          ...s,
+          accounts: merge(s.accounts, incoming.accounts),
+          transactions: merge(s.transactions, incoming.transactions),
+          budgets: merge(s.budgets, incoming.budgets),
+          recurring: merge(s.recurring, incoming.recurring),
+        };
+      });
+      showToast('✓ 已合併匯入');
+    }
+    setImportPreview(null);
+  };
+
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-eyebrow">Settings · 設定</div>
-          <h1 className="page-title">設定與週期</h1>
-          <div className="page-subtitle">匯率、週期性收支、資料管理</div>
+          <h1 className="page-title">設定與資料</h1>
+          <div className="page-subtitle">匯率、週期性收支、匯入匯出、報表產出</div>
         </div>
       </div>
 
+      {/* 視覺化報表 */}
+      <div className="card" style={{ marginBottom: 16, background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--accent-soft) 200%)' }}>
+        <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, alignItems: 'center' }}>
+          <div>
+            <div className="page-eyebrow" style={{ marginBottom: 6 }}>Visual Report · 視覺化報表</div>
+            <h3 className="font-serif" style={{ fontSize: 22, fontWeight: 500, margin: '0 0 6px' }}>產出完整圖表報表</h3>
+            <p className="muted" style={{ margin: 0, fontSize: 13, maxWidth: 540, lineHeight: 1.6 }}>
+              將 KPI、月度收支、分類圓餅、商家排行、預算狀態、完整交易明細整合成一份雜誌風報表。可直接列印或存成 PDF。
+            </p>
+          </div>
+          <button className="btn btn-primary" onClick={onOpenReport} style={{ padding: '14px 24px', fontSize: 14 }}>
+            開啟報表 →
+          </button>
+        </div>
+      </div>
+
+      {/* 資料備份與還原 */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <div>
+            <h3 className="card-title">資料備份 / 還原</h3>
+            <div className="card-sub" style={{ marginTop: 4 }}>JSON Backup · 完整保留所有帳戶、交易、預算、載具設定</div>
+          </div>
+        </div>
+        <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <button className="card card-pad" onClick={exportJSON} style={{
+            cursor: 'pointer', textAlign: 'left', border: '1px solid var(--line)', background: 'var(--bg-elev)',
+            display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start',
+          }}>
+            <div style={{ fontFamily: 'var(--serif)', fontSize: 26, color: 'var(--positive)' }}>↓</div>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>匯出 JSON 備份</div>
+            <div className="muted" style={{ fontSize: 12 }}>
+              下載完整資料 · {state.transactions.length} 筆交易 · {state.accounts.length} 帳戶
+            </div>
+          </button>
+          <label className="card card-pad" style={{
+            cursor: 'pointer', border: '1px solid var(--line)', background: 'var(--bg-elev)',
+            display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start',
+          }}>
+            <div style={{ fontFamily: 'var(--serif)', fontSize: 26, color: 'var(--accent)' }}>↑</div>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>匯入 JSON 紀錄</div>
+            <div className="muted" style={{ fontSize: 12 }}>選擇之前的備份檔，可合併或取代現有資料</div>
+            <input type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={handleJSONUpload} />
+          </label>
+        </div>
+        <div style={{ padding: '0 24px 22px' }}>
+          <div className="muted" style={{ fontSize: 11.5, padding: 10, background: 'var(--bg-sunk)', borderRadius: 6, lineHeight: 1.6 }}>
+            💡 建議定期匯出備份。資料只存在瀏覽器，清除快取或更換裝置會遺失。
+          </div>
+        </div>
+      </div>
+
+      {/* 匯率設定 */}
       <div className="card card-pad" style={{ marginBottom: 16, maxWidth: 540 }}>
         <h3 className="card-title" style={{ marginBottom: 14 }}>匯率設定</h3>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
@@ -568,6 +704,50 @@ function SettingsPage({ ledger }) {
         </div>
         <div className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>所有資料存於瀏覽器本機 localStorage</div>
       </div>
+
+      {/* 匯入預覽 modal */}
+      {importPreview && (
+        <div className="modal-backdrop" onClick={() => setImportPreview(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: 24, borderBottom: '1px solid var(--line-soft)' }}>
+              <div className="page-eyebrow">JSON Backup · 預覽</div>
+              <h2 className="font-serif" style={{ fontSize: 24, margin: '6px 0 4px', fontWeight: 500 }}>確認匯入</h2>
+              <div className="muted" style={{ fontSize: 12 }}>{importPreview.fileName}</div>
+            </div>
+            <div style={{ padding: 24 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 18 }}>
+                <ImportStat label="帳戶" value={importPreview.stats.accounts} />
+                <ImportStat label="交易" value={importPreview.stats.transactions} />
+                <ImportStat label="預算" value={importPreview.stats.budgets} />
+                <ImportStat label="週期" value={importPreview.stats.recurring} />
+              </div>
+              {importPreview.exportedAt && (
+                <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
+                  備份時間：{new Date(importPreview.exportedAt).toLocaleString('zh-TW')}
+                </div>
+              )}
+              <div style={{ padding: 14, background: 'var(--bg-sunk)', borderRadius: 8, fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                <strong style={{ color: 'var(--ink-2)' }}>合併</strong>：保留現有資料，加入備份檔中不存在的項目（依 ID 比對）<br />
+                <strong style={{ color: 'var(--ink-2)' }}>取代</strong>：清除現有資料，用備份檔完全覆蓋
+              </div>
+            </div>
+            <div style={{ padding: 18, borderTop: '1px solid var(--line-soft)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button className="btn" onClick={() => setImportPreview(null)}>取消</button>
+              <button className="btn" onClick={() => doImport('merge')}>合併匯入</button>
+              <button className="btn btn-primary" onClick={() => { if (confirm('確定要取代所有現有資料？無法復原。')) doImport('replace'); }}>取代</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportStat({ label, value }) {
+  return (
+    <div style={{ padding: 12, background: 'var(--bg-sunk)', borderRadius: 8, textAlign: 'center' }}>
+      <div style={{ fontFamily: 'var(--serif)', fontSize: 22, fontWeight: 500 }}>{value}</div>
+      <div className="muted" style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 2 }}>{label}</div>
     </div>
   );
 }
