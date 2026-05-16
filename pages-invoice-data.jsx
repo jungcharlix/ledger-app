@@ -118,4 +118,91 @@ function parseQR(left, right) {
   return { ok: false, error: '查無此發票號碼。請使用範例：' + DEMO_INVOICES.slice(0, 2).map((i) => i.number).join('、') };
 }
 
-Object.assign(window, { DEMO_INVOICES, MERCHANT_RULES, guessCategory, parseQR });
+Object.assign(window, { DEMO_INVOICES, MERCHANT_RULES, guessCategory, parseQR, parseMOFCSV });
+
+// ── 解析財政部 CSV ──
+// 支援格式：
+//   標頭含「發票號碼」「總金額」「商店店名」等欄位
+//   逗號分隔，行尾 \r\n 或 \n
+function parseMOFCSV(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+
+  // 偵測 delimiter
+  const delim = lines[0].includes('\t') ? '\t' : ',';
+
+  // 解析標頭：找關鍵欄位的索引
+  const headers = parseCSVLine(lines[0], delim).map((h) => h.trim().replace(/^"|"$/g, ''));
+  const findCol = (...keywords) => {
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i];
+      if (keywords.some((kw) => h.includes(kw))) return i;
+    }
+    return -1;
+  };
+  const idx = {
+    date: findCol('發票日期', '日期', '消費日期'),
+    merchant: findCol('店名', '商家', '商店'),
+    taxId: findCol('統編', '統一編號'),
+    number: findCol('發票號碼', '號碼'),
+    amount: findCol('總金額', '金額', '消費金額'),
+    status: findCol('狀態'),
+  };
+
+  if (idx.number === -1 || idx.amount === -1) return [];
+
+  const invoices = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i], delim);
+    const number = (cols[idx.number] || '').trim().replace(/[^A-Z0-9-]/g, '');
+    if (!number || number.length < 8) continue;
+    const amount = parseFloat((cols[idx.amount] || '0').replace(/[",]/g, ''));
+    if (!amount || isNaN(amount)) continue;
+    const dateRaw = (cols[idx.date] || '').trim();
+    const date = normalizeDate(dateRaw);
+    const merchant = (cols[idx.merchant] || '').trim();
+    const taxId = idx.taxId >= 0 ? (cols[idx.taxId] || '').trim() : '';
+
+    // 嘗試把 8 位連號發票號碼格式化為 AB-12345678
+    let invNum = number;
+    if (/^[A-Z]{2}\d{8}$/.test(number)) invNum = number.slice(0, 2) + '-' + number.slice(2);
+
+    invoices.push({
+      number: invNum, merchant, taxId, date, time: '12:00',
+      amount, items: [{ name: merchant + ' 消費', qty: 1, price: amount }],
+    });
+  }
+  return invoices;
+}
+
+function parseCSVLine(line, delim = ',') {
+  const result = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (c === delim && !inQuote) {
+      result.push(cur); cur = '';
+    } else { cur += c; }
+  }
+  result.push(cur);
+  return result.map((s) => s.replace(/^"|"$/g, ''));
+}
+
+function normalizeDate(raw) {
+  if (!raw) return ymd(new Date());
+  // 2026/05/12 or 2026-05-12 or 1140512 (民國年)
+  raw = raw.trim();
+  if (/^\d{7}$/.test(raw)) {
+    // 民國年 YYYMMDD
+    const y = parseInt(raw.slice(0, 3), 10) + 1911;
+    return `${y}-${raw.slice(3, 5)}-${raw.slice(5, 7)}`;
+  }
+  if (/^\d{4}[\/-]\d{1,2}[\/-]\d{1,2}/.test(raw)) {
+    const [y, m, d] = raw.split(/[\/-]/);
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return raw;
+}

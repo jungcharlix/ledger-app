@@ -13,14 +13,18 @@ function InvoicePage({ ledger, onNav }) {
   const [error, setError] = useStateInv('');
   const [linking, setLinking] = useStateInv(false);
   const [syncing, setSyncing] = useStateInv(false);
+  const [carrierInput, setCarrierInput] = useStateInv('');
+  const [carrierType, setCarrierType] = useStateInv('mobile');
 
   // 已匯入的發票號碼（去重用）
   const importedNumbers = useMemoI(() => {
     return new Set(state.transactions.filter((t) => t.invoice).map((t) => t.invoice));
   }, [state.transactions]);
 
-  // 預設帳戶（用於自動匯入）
-  const defaultAccount = state.accounts.find((a) => a.region === 'TW')?.id || state.accounts[0]?.id;
+  // 預設帳戶（用於自動匯入）：優先用 carrier 設定，否則第一個台灣帳戶
+  const defaultAccount = carrier.defaultAccount && state.accounts.find((a) => a.id === carrier.defaultAccount)
+    ? carrier.defaultAccount
+    : (state.accounts.find((a) => a.region === 'TW')?.id || state.accounts[0]?.id);
 
   // 手動觸發同步
   const performSync = (silent = false) => {
@@ -54,20 +58,25 @@ function InvoicePage({ ledger, onNav }) {
     return () => clearInterval(timer);
   }, [carrier.connected, carrier.autoSync, state.transactions.length]);
 
-  // 連結載具：模擬掃描手機條碼
-  const linkCarrier = () => {
+  // 連結載具：使用者輸入手機條碼
+  const linkCarrier = (input, type) => {
+    const value = (input || '').trim().toUpperCase();
+    if (!value) { setError('請輸入載具號碼'); return; }
+    if (type === 'mobile' && !/^\/[A-Z0-9.\-+]{7}$/.test(value)) {
+      setError('手機條碼格式錯誤：應為 / 加 7 位英數字（例 /ABC1234）');
+      return;
+    }
+    setError('');
     setLinking(true);
     setTimeout(() => {
-      // 隨機產生一組「手機條碼」（真實格式為 / + 7 位英數）
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let code = '/';
-      for (let i = 0; i < 7; i++) code += chars[Math.floor(Math.random() * chars.length)];
-      ledger.updateCarrier({ connected: true, code, autoSync: true, lastSync: new Date().toISOString() });
+      ledger.updateCarrier({
+        connected: true, code: value, type,
+        autoSync: true, lastSync: new Date().toISOString(),
+      });
       setLinking(false);
       showToast('✓ 載具已連結 · 自動同步已開啟');
-      // 連結後立刻同步一次
       setTimeout(() => performSync(true), 500);
-    }, 1600);
+    }, 1000);
   };
 
   const unlinkCarrier = () => {
@@ -113,11 +122,55 @@ function InvoicePage({ ledger, onNav }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setError('');
-    // 模擬：直接吐出尚未匯入的所有 demo 發票供確認
-    const pool = DEMO_INVOICES.filter((inv) => !importedNumbers.has(inv.number));
-    if (pool.length === 0) { setError('沒有新發票可匯入'); return; }
-    showToast('已解析 ' + pool.length + ' 張發票');
-    setParsed({ batch: true, invoices: pool });
+    // 讀取檔案 — 財政部 CSV 通常為 BIG5/CP950 編碼
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      let text = '';
+      try {
+        // 先試 BIG5（財政部標準）
+        const buf = ev.target.result;
+        try {
+          const dec = new TextDecoder('big5', { fatal: false });
+          text = dec.decode(buf);
+        } catch (err) {
+          const dec = new TextDecoder('utf-8', { fatal: false });
+          text = dec.decode(buf);
+        }
+        // 偵測編碼是否解錯：如果 UTF-8 解 BIG5 會出現大量替代字元
+        if (text.indexOf('\uFFFD') > 5 || text.split('\n')[0].indexOf('?') > 3) {
+          const dec = new TextDecoder('utf-8', { fatal: false });
+          text = dec.decode(buf);
+        }
+      } catch (err) {
+        setError('檔案讀取失敗：' + err.message);
+        return;
+      }
+      const parsed = parseMOFCSV(text);
+      if (parsed.length === 0) {
+        setError('沒有解析到發票。請確認檔案是財政部「消費明細」CSV 格式');
+        return;
+      }
+      // 過濾已匯入
+      const newOnes = parsed.filter((inv) => !importedNumbers.has(inv.number));
+      if (newOnes.length === 0) {
+        setError(`解析出 ${parsed.length} 張發票，但全部已經匯入過了`);
+        return;
+      }
+      showToast('✓ 解析 ' + newOnes.length + ' 張新發票');
+      setParsed({ batch: true, invoices: newOnes, totalParsed: parsed.length });
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  // 範例 CSV 下載
+  const downloadSampleCSV = () => {
+    const sample = '載具名稱,載具號碼,發票日期,商店統編,商店店名,發票號碼,總金額,發票狀態,發票來源\n手機條碼,/ABC1234,2026/05/12,22099131,全家便利商店復興店,MN-44556677,95,開立,實體通路\n手機條碼,/ABC1234,2026/05/13,24531037,Uniqlo信義店,OP-33445566,1490,開立,實體通路\n手機條碼,/ABC1234,2026/05/13,12677001,威秀影城信義店,QR-77889900,680,開立,實體通路\n';
+    const blob = new Blob(['\uFEFF' + sample], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = '範例-消費明細.csv'; a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -146,15 +199,37 @@ function InvoicePage({ ledger, onNav }) {
       {tab === 'analytics' ? <InvoiceAnalytics ledger={ledger} /> : (
       <React.Fragment>
 
+      {/* Demo 模式說明 */}
+      <div style={{
+        marginBottom: 16, padding: '12px 16px',
+        background: 'var(--warn)', color: '#1A1612',
+        borderRadius: 10, fontSize: 12.5, lineHeight: 1.5,
+        display: 'flex', gap: 12, alignItems: 'flex-start',
+      }}>
+        <span style={{ fontFamily: 'var(--serif)', fontSize: 18, lineHeight: 1, marginTop: 1 }}>!</span>
+        <div>
+          <strong>此為純前端 Demo</strong>，無法真的連到財政部 API。「載具自動同步」「QR 掃描」是<strong>模擬展示流程</strong>用的假發票。
+          要匯入<strong>真實</strong>發票資料，請使用下方<strong>「財政部 CSV」</strong>頁籤上傳你在「財政部電子發票」App 下載的消費明細。
+        </div>
+      </div>
+
       {/* 載具連結 hero */}
       <CarrierCard
         carrier={carrier}
+        accounts={state.accounts}
+        defaultAccount={defaultAccount}
         linking={linking}
         syncing={syncing}
-        onLink={linkCarrier}
+        input={carrierInput}
+        onInputChange={setCarrierInput}
+        localType={carrierType}
+        onTypeChange={setCarrierType}
+        error={error}
+        onLink={(v, t) => linkCarrier(v || carrierInput, t || carrierType)}
         onUnlink={unlinkCarrier}
         onToggleAuto={(v) => ledger.updateCarrier({ autoSync: v })}
         onSyncNow={() => performSync(false)}
+        onChangeAccount={(id) => ledger.updateCarrier({ defaultAccount: id })}
       />
 
       {/* 三種匯入方式 */}
@@ -224,10 +299,11 @@ function InvoicePage({ ledger, onNav }) {
           )}
 
           {mode === 'csv' && (
-            <div style={{ padding: 32, maxWidth: 540 }}>
+            <div style={{ padding: 32, maxWidth: 600 }}>
               <h3 className="font-serif" style={{ fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>上傳財政部 CSV</h3>
               <p className="muted" style={{ margin: '0 0 20px', fontSize: 13 }}>
-                從「財政部電子發票整合服務平台 → 載具歸戶 → 消費明細下載」匯出的 CSV 檔。
+                這是 <strong style={{ color: 'var(--positive)' }}>唯一真正會解析你資料的方式</strong>。
+                從「財政部電子發票」App → 載具歸戶 → 消費明細下載匯出 CSV，上傳後系統會用 BIG5 解碼、抓取發票號碼/商家/金額/日期。
               </p>
               <label className="card" style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -235,12 +311,19 @@ function InvoicePage({ ledger, onNav }) {
               }}>
                 <div style={{ fontFamily: 'var(--serif)', fontSize: 48, color: 'var(--ink-4)', marginBottom: 8 }}>↥</div>
                 <div style={{ fontWeight: 500, marginBottom: 4 }}>拖曳檔案到此或點擊選擇</div>
-                <div className="muted" style={{ fontSize: 12 }}>支援 .csv · 最大 10 MB</div>
+                <div className="muted" style={{ fontSize: 12 }}>支援 .csv · BIG5 / UTF-8 編碼 · 最大 10 MB</div>
                 <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCSVUpload} />
               </label>
-              <div style={{ marginTop: 14, padding: 12, background: 'var(--bg-sunk)', borderRadius: 8, fontSize: 12, color: 'var(--ink-3)' }}>
-                <strong style={{ color: 'var(--ink-2)' }}>提示：</strong>
-                建議在「財政部電子發票」App 中將載具歸戶後，每月匯出一次 CSV 即可一次匯入所有發票。
+              <div style={{ marginTop: 14, padding: 14, background: 'var(--bg-sunk)', borderRadius: 8, fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.7 }}>
+                <strong style={{ color: 'var(--ink-2)' }}>取得 CSV 的步驟：</strong><br />
+                1. 在手機開啟「<a href="https://www.einvoice.nat.gov.tw/" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>財政部電子發票</a>」App<br />
+                2. 載具歸戶 → 我的明細 → 選擇月份 → 下載／寄送 CSV<br />
+                3. 把 CSV 傳到電腦後上傳到這裡<br />
+                <button onClick={downloadSampleCSV} style={{
+                  marginTop: 10, padding: '4px 10px', fontSize: 11.5, background: 'var(--bg-card)',
+                  border: '1px solid var(--line)', borderRadius: 6, cursor: 'pointer', color: 'var(--ink-2)',
+                  fontFamily: 'inherit',
+                }}>↓ 下載範例 CSV 試試</button>
               </div>
             </div>
           )}
@@ -338,7 +421,7 @@ function TabButton({ active, onClick, glyph, label, en, badge }) {
   );
 }
 
-function CarrierCard({ carrier, linking, syncing, onLink, onUnlink, onToggleAuto, onSyncNow }) {
+function CarrierCard({ carrier, accounts, defaultAccount, linking, syncing, onLink, onUnlink, onToggleAuto, onSyncNow, onChangeAccount, input, onInputChange, localType, onTypeChange, error }) {
   const connected = carrier.connected;
   const lastSyncTime = carrier.lastSync ? new Date(carrier.lastSync) : null;
   const lastSyncRel = lastSyncTime ? (() => {
@@ -360,34 +443,84 @@ function CarrierCard({ carrier, linking, syncing, onLink, onUnlink, onToggleAuto
       }}>
         <div style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius: '50%',
           background: 'radial-gradient(circle, rgba(216,124,88,0.25) 0%, transparent 60%)' }} />
-        <div style={{ padding: '26px 28px', display: 'grid', gridTemplateColumns: '1fr auto', gap: 24, alignItems: 'center', position: 'relative' }}>
-          <div>
-            <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', opacity: 0.55, marginBottom: 8 }}>
-              Auto Sync · 自動同步
-            </div>
-            <h3 className="font-serif" style={{ fontSize: 26, fontWeight: 500, margin: '0 0 8px', color: '#F0E8D6' }}>
-              連結手機條碼載具
-            </h3>
-            <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, opacity: 0.7, maxWidth: 540 }}>
-              連結你的財政部手機條碼後，每次消費的電子發票會自動同步進記帳系統，無需再手動掃描。
-              系統會自動辨識商家分類、防止重複匯入。
-            </p>
-            <div style={{ display: 'flex', gap: 20, marginTop: 16, fontSize: 12, opacity: 0.6 }}>
-              <span>◆ 即時同步</span>
-              <span>◆ 防重複匯入</span>
-              <span>◆ 自動分類</span>
-              <span>◆ 對獎通知</span>
-            </div>
+        <div style={{ padding: '26px 28px', position: 'relative' }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', opacity: 0.55, marginBottom: 8 }}>
+            Auto Sync · 自動同步
           </div>
-          <button className="btn btn-primary"
-            onClick={onLink} disabled={linking}
-            style={{
-              padding: '14px 24px', fontSize: 14,
-              background: '#D87C58', borderColor: '#D87C58', color: '#1A1612',
-              fontWeight: 600,
-            }}>
-            {linking ? '⟳ 連結中…' : '＋ 連結載具'}
-          </button>
+          <h3 className="font-serif" style={{ fontSize: 26, fontWeight: 500, margin: '0 0 8px', color: '#F0E8D6' }}>
+            輸入你的手機條碼載具
+          </h3>
+          <p style={{ margin: '0 0 18px', fontSize: 13.5, lineHeight: 1.6, opacity: 0.7, maxWidth: 600 }}>
+            連結你的財政部手機條碼後，每次消費的電子發票會自動同步進記帳系統。
+            還沒有？到「<a href="https://www.einvoice.nat.gov.tw/" target="_blank" rel="noreferrer" style={{ color: '#D87C58', textDecoration: 'underline' }}>財政部電子發票整合服務平台</a>」申請。
+          </p>
+
+          {/* 載具類型 */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: 'rgba(255,255,255,0.05)', padding: 3, borderRadius: 9, width: 'fit-content' }}>
+            {[
+              { id: 'mobile', label: '手機條碼', en: '/XXXXXXX' },
+              { id: 'natural', label: '自然人憑證', en: 'NPC' },
+              { id: 'card', label: '信用卡載具', en: 'Card' },
+            ].map((o) => (
+              <button key={o.id} onClick={() => onTypeChange(o.id)} style={{
+                appearance: 'none', border: 'none', padding: '6px 14px', borderRadius: 7,
+                background: localType === o.id ? '#D87C58' : 'transparent',
+                color: localType === o.id ? '#1A1612' : 'rgba(240,232,214,0.7)',
+                cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+              }}>
+                {o.label} <span style={{ opacity: 0.55, marginLeft: 4, fontFamily: 'var(--mono)', fontSize: 10 }}>{o.en}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* 輸入 */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', maxWidth: 560 }}>
+            <div style={{ flex: 1 }}>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => onInputChange(e.target.value)}
+                placeholder={localType === 'mobile' ? '/ABC1234' : localType === 'natural' ? 'AB12345678901234' : '請輸入卡號末四碼'}
+                style={{
+                  width: '100%', padding: '12px 14px',
+                  background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: 9, color: '#F0E8D6',
+                  fontFamily: 'var(--mono)', fontSize: 15, letterSpacing: 1,
+                  outline: 'none',
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#D87C58'}
+                onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.15)'}
+                onKeyDown={(e) => { if (e.key === 'Enter') onLink(input, localType); }}
+                autoFocus
+              />
+              {error && (
+                <div style={{ marginTop: 8, padding: '6px 10px', background: 'rgba(216,124,88,0.15)', borderRadius: 6, fontSize: 12, color: '#D87C58' }}>
+                  ⚠ {error}
+                </div>
+              )}
+              <div style={{ marginTop: 6, fontSize: 11, opacity: 0.55 }}>
+                {localType === 'mobile' && '格式：/ 加 7 位英數字（在「財政部電子發票」App 內可查看）'}
+                {localType === 'natural' && '使用內政部自然人憑證 IC 卡卡號'}
+                {localType === 'card' && '已歸戶的信用卡載具'}
+              </div>
+            </div>
+            <button onClick={() => onLink(input, localType)} disabled={linking || !input}
+              style={{
+                padding: '12px 22px', fontSize: 14,
+                background: '#D87C58', borderColor: '#D87C58', color: '#1A1612',
+                fontWeight: 600, border: 'none', borderRadius: 9, cursor: linking || !input ? 'not-allowed' : 'pointer',
+                opacity: linking || !input ? 0.5 : 1, fontFamily: 'inherit',
+              }}>
+              {linking ? '⟳ 連結中…' : '連結'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 18, marginTop: 18, fontSize: 11.5, opacity: 0.6 }}>
+            <span>◆ 即時同步</span>
+            <span>◆ 防重複匯入</span>
+            <span>◆ 自動分類</span>
+            <span>◆ 對獎通知</span>
+          </div>
         </div>
       </div>
     );
@@ -444,6 +577,17 @@ function CarrierCard({ carrier, linking, syncing, onLink, onUnlink, onToggleAuto
           <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
             {carrier.autoSync ? '系統每 25 秒檢查一次新發票，並自動匯入' : '已停用自動同步，可手動按右側按鈕同步'}
           </div>
+          {accounts && onChangeAccount && (
+            <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg-sunk)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 11, color: 'var(--ink-4)', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>匯入到</span>
+              <select className="select" value={defaultAccount || ''} onChange={(e) => onChangeAccount(e.target.value)}
+                style={{ flex: 1, padding: '4px 8px', fontSize: 12, height: 'auto' }}>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* 控制 */}
