@@ -4,7 +4,7 @@
 
 ## 🌐 線上使用
 
-**👉 [https://jungcharlix.github.io/ledger/](https://你的帳號.github.io/ledger/)**
+**👉 [https://jungcharlix.github.io/ledger/](https://你的帳號.github.io/ledger-app/)**
 
 > 推到 GitHub 後，把上方網址改成你自己的 Pages URL。
 
