@@ -316,4 +316,4 @@ function hslToHex(h, s, l) {
   return '#' + toHex(f(0)) + toHex(f(8)) + toHex(f(4));
 }
 
-Object.assign(window, { CategoriesPage });
+Object.assign(window, { CategoriesPage, HSLSlider, ICON_LIBRARY, COLOR_PRESETS, hexToHSL, hslToHex });

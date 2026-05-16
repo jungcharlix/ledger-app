@@ -1,6 +1,85 @@
 // store.jsx — global app state, persisted to localStorage
 
 const LEDGER_KEY = 'ledger.v1';
+const PROFILES_KEY = 'ledger.profiles.v1';
+const ACTIVE_PROFILE_KEY = 'ledger.activeProfile';
+
+// ── Profile (使用者檔案) ────────────────────────────────────────────────
+const DEFAULT_PROFILE = { id: 'default', name: '我的帳本', color: '#C66D4A', icon: '◐', createdAt: new Date().toISOString() };
+
+function profileDataKey(profileId) {
+  // 預設 profile 仍用舊 key 以維持向後相容
+  return profileId === 'default' ? LEDGER_KEY : LEDGER_KEY + '.' + profileId;
+}
+
+function loadProfiles() {
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.length > 0) return list;
+    }
+  } catch (e) {}
+  // 第一次：建預設 profile
+  const list = [DEFAULT_PROFILE];
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(list));
+  return list;
+}
+
+function saveProfiles(list) {
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(list));
+}
+
+function loadActiveProfileId() {
+  try {
+    const id = localStorage.getItem(ACTIVE_PROFILE_KEY);
+    if (id) return id;
+  } catch (e) {}
+  return 'default';
+}
+
+function saveActiveProfileId(id) {
+  localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+}
+
+function useProfiles() {
+  const [profiles, setProfiles] = React.useState(loadProfiles);
+  const [activeId, setActiveId] = React.useState(loadActiveProfileId);
+
+  React.useEffect(() => { saveProfiles(profiles); }, [profiles]);
+  React.useEffect(() => { saveActiveProfileId(activeId); }, [activeId]);
+
+  const active = profiles.find((p) => p.id === activeId) || profiles[0];
+
+  const addProfile = (data) => {
+    const newP = {
+      id: 'p' + Date.now().toString(36),
+      name: data.name || '新使用者',
+      color: data.color || '#7A8B5C',
+      icon: data.icon || '◇',
+      createdAt: new Date().toISOString(),
+    };
+    setProfiles((ps) => [...ps, newP]);
+    setActiveId(newP.id);
+    return newP;
+  };
+
+  const updateProfile = (id, patch) => {
+    setProfiles((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  };
+
+  const deleteProfile = (id) => {
+    if (profiles.length <= 1) { showToast && showToast('至少要保留一個使用者'); return false; }
+    setProfiles((ps) => ps.filter((p) => p.id !== id));
+    localStorage.removeItem(profileDataKey(id));
+    if (activeId === id) setActiveId(profiles.find((p) => p.id !== id).id);
+    return true;
+  };
+
+  const switchProfile = (id) => setActiveId(id);
+
+  return { profiles, active, activeId, addProfile, updateProfile, deleteProfile, switchProfile };
+}
 
 // ── Categories ────────────────────────────────────────────────────────────
 const DEFAULT_CATEGORIES = {
@@ -105,22 +184,31 @@ function seed() {
   };
 }
 
-function loadState() {
+function loadState(profileId) {
+  const key = profileDataKey(profileId || 'default');
   try {
-    const raw = localStorage.getItem(LEDGER_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) return JSON.parse(raw);
   } catch (e) {}
   return seed();
 }
 
-function saveState(s) {
-  try { localStorage.setItem(LEDGER_KEY, JSON.stringify(s)); } catch (e) {}
+function saveState(s, profileId) {
+  const key = profileDataKey(profileId || 'default');
+  try { localStorage.setItem(key, JSON.stringify(s)); } catch (e) {}
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────
-function useLedger() {
-  const [state, setState] = React.useState(loadState);
-  React.useEffect(() => { saveState(state); }, [state]);
+function useLedger(profileId) {
+  const id = profileId || 'default';
+  const [state, setState] = React.useState(() => loadState(id));
+
+  // 切換 profile：重新載入資料
+  React.useEffect(() => {
+    setState(loadState(id));
+  }, [id]);
+
+  React.useEffect(() => { saveState(state, id); }, [state, id]);
 
   const addTxn = (txn) => setState((s) => ({
     ...s,
@@ -202,7 +290,7 @@ function useLedger() {
     ...s,
     transactions: s.transactions.map((t) => t.id === id ? { ...t, waste: false, wasteReason: '' } : t),
   }));
-  const reset = () => { localStorage.removeItem(LEDGER_KEY); setState(seed()); };
+  const reset = () => { localStorage.removeItem(profileDataKey(id)); setState(seed()); };
 
   return {
     state, setState,
@@ -293,7 +381,8 @@ function relTime(dateStr) {
 }
 
 Object.assign(window, {
-  useLedger, fmtMoney, convertTo, accountBalance,
+  useLedger, useProfiles, profileDataKey,
+  fmtMoney, convertTo, accountBalance,
   findCategory, findAccount, DEFAULT_CATEGORIES, getCats,
   ymd, ym, relTime, seed,
 });

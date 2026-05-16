@@ -23,6 +23,7 @@
 <script type="text/babel" src="pages-report-view.jsx"></script>
 <script type="text/babel" src="pages-categories.jsx"></script>
 <script type="text/babel" src="pages-waste.jsx"></script>
+<script type="text/babel" src="pages-profiles.jsx"></script>
 <script type="text/babel" src="pages-invoice-data.jsx"></script>
 <script type="text/babel" src="pages-invoice-analytics.jsx"></script>
 <script type="text/babel" src="pages-invoice.jsx"></script>
@@ -39,10 +40,12 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const ledger = useLedger();
+  const profilesHook = useProfiles();
+  const ledger = useLedger(profilesHook.activeId);
   const [route, setRoute] = React.useState('dashboard');
   const [addPrefill, setAddPrefill] = React.useState(null);
   const [showReport, setShowReport] = React.useState(false);
+  const [showProfileMgr, setShowProfileMgr] = React.useState(false);
 
   // apply tweaks to root
   React.useEffect(() => {
@@ -120,6 +123,13 @@ function App() {
           <small>Ledger</small>
         </div>
 
+        <ProfileSwitcher
+          profiles={profilesHook.profiles}
+          active={profilesHook.active}
+          onSwitch={(id) => { profilesHook.switchProfile(id); showToast('已切換'); }}
+          onManage={() => setShowProfileMgr(true)}
+        />
+
         <div className="sidebar-section">主選單 · Menu</div>
         {navItems.map((n) => (
           <button key={n.id} className={'nav-item ' + (isActive(n.id) ? 'active' : '')} onClick={() => nav(n.id)}>
@@ -152,6 +162,7 @@ function App() {
       </main>
 
       {showReport && <ReportView ledger={ledger} onClose={() => setShowReport(false)} />}
+      {showProfileMgr && <ProfileManager profilesHook={profilesHook} onClose={() => setShowProfileMgr(false)} />}
 
       <TweaksPanel>
         <TweakSection label="主題 Theme" />
