@@ -189,65 +189,13 @@ function CategoryEditor({ ledger, type, categoryId, onClose }) {
           {/* 顏色 */}
           <div className="field">
             <span className="field-label">顏色 · Color</span>
-            {/* HSL Sliders */}
-            <div style={{ padding: 14, background: 'var(--bg-sunk)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <HSLSlider label="色相 H" value={hsl.h} max={360} suffix="°"
-                grad={`linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)`}
-                onChange={(v) => setHSL(v, hsl.s, hsl.l)} />
-              <HSLSlider label="飽和度 S" value={hsl.s} max={100} suffix="%"
-                grad={`linear-gradient(to right, hsl(${hsl.h}, 0%, ${hsl.l}%), hsl(${hsl.h}, 100%, ${hsl.l}%))`}
-                onChange={(v) => setHSL(hsl.h, v, hsl.l)} />
-              <HSLSlider label="亮度 L" value={hsl.l} max={100} suffix="%"
-                grad={`linear-gradient(to right, #000, hsl(${hsl.h}, ${hsl.s}%, 50%), #fff)`}
-                onChange={(v) => setHSL(hsl.h, hsl.s, v)} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                <input className="input" type="text" value={color}
-                  onChange={(e) => { if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) setColor(e.target.value); else setColor(e.target.value); }}
-                  style={{ fontFamily: 'var(--mono)', flex: 1, textTransform: 'uppercase' }} />
-                <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
-                  style={{ width: 38, height: 38, border: 'none', cursor: 'pointer', background: 'transparent', padding: 0 }} />
-              </div>
-            </div>
-            {/* 預設色 */}
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 10 }}>
-              {COLOR_PRESETS.map((c) => (
-                <button key={c} onClick={() => setColor(c)} style={{
-                  width: 26, height: 26, borderRadius: 7, background: c, cursor: 'pointer',
-                  border: color.toLowerCase() === c.toLowerCase() ? '2px solid var(--ink)' : '1px solid var(--line)',
-                  padding: 0,
-                }} title={c} />
-              ))}
-            </div>
+            <RichColorPicker color={color} onChange={setColor} />
           </div>
 
           {/* 圖示 */}
           <div className="field">
             <span className="field-label">圖示 · Icon</span>
-            <div style={{ padding: 14, background: 'var(--bg-sunk)', borderRadius: 8 }}>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <input className="input" placeholder="貼上任何符號 / emoji / 文字" value={iconInput}
-                  onChange={(e) => setIconInput(e.target.value)}
-                  style={{ flex: 1, fontFamily: 'var(--serif)' }} />
-                <button className="btn" onClick={() => {
-                  const chars = Array.from(iconInput.trim());
-                  if (chars.length > 0) { setIcon(chars[0]); setIconInput(''); }
-                }}>套用</button>
-              </div>
-              <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>從圖示庫選擇 · 共 {ICON_LIBRARY.length} 個</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))', gap: 4, maxHeight: 200, overflowY: 'auto' }}>
-                {ICON_LIBRARY.map((i, idx) => (
-                  <button key={i + idx} onClick={() => setIcon(i)} style={{
-                    width: '100%', aspectRatio: '1', borderRadius: 6,
-                    background: icon === i ? color : 'var(--bg-card)',
-                    color: icon === i ? 'white' : 'var(--ink-2)',
-                    border: icon === i ? '2px solid ' + color : '1px solid var(--line-soft)',
-                    fontFamily: 'var(--serif)', fontSize: 16, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: 0,
-                  }}>{i}</button>
-                ))}
-              </div>
-            </div>
+            <RichIconPicker icon={icon} color={color} onChange={setIcon} />
           </div>
         </div>
 
@@ -288,6 +236,94 @@ function HSLSlider({ label, value, max, suffix, grad, onChange }) {
   );
 }
 
+// ── Reusable rich pickers ──────────────────────────────────────────────
+function RichColorPicker({ color, onChange, presets = COLOR_PRESETS }) {
+  const hsl = hexToHSL(color);
+  const setHSL = (h, s, l) => onChange(hslToHex(h, s, l));
+  return (
+    <div>
+      {/* 建議色塊 */}
+      <div style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6, fontWeight: 600 }}>建議色 · Suggested</div>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 12 }}>
+        {presets.map((c) => (
+          <button key={c} onClick={() => onChange(c)} style={{
+            width: 30, height: 30, borderRadius: 8, background: c, cursor: 'pointer',
+            border: color.toLowerCase() === c.toLowerCase() ? '2px solid var(--ink)' : '1px solid var(--line)',
+            padding: 0,
+          }} title={c} />
+        ))}
+      </div>
+      {/* 自訂 HSL */}
+      <div style={{ padding: 14, background: 'var(--bg-sunk)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>自訂 · Custom</div>
+        <HSLSlider label="色相 H" value={hsl.h} max={360} suffix="°"
+          grad="linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)"
+          onChange={(v) => setHSL(v, hsl.s, hsl.l)} />
+        <HSLSlider label="飽和度 S" value={hsl.s} max={100} suffix="%"
+          grad={`linear-gradient(to right, hsl(${hsl.h}, 0%, ${hsl.l}%), hsl(${hsl.h}, 100%, ${hsl.l}%))`}
+          onChange={(v) => setHSL(hsl.h, v, hsl.l)} />
+        <HSLSlider label="亮度 L" value={hsl.l} max={100} suffix="%"
+          grad={`linear-gradient(to right, #000, hsl(${hsl.h}, ${hsl.s}%, 50%), #fff)`}
+          onChange={(v) => setHSL(hsl.h, hsl.s, v)} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input className="input" type="text" value={color}
+            onChange={(e) => onChange(e.target.value)}
+            style={{ fontFamily: 'var(--mono)', flex: 1, textTransform: 'uppercase' }} />
+          <input type="color" value={color} onChange={(e) => onChange(e.target.value)}
+            style={{ width: 38, height: 38, border: 'none', cursor: 'pointer', background: 'transparent', padding: 0 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RichIconPicker({ icon, color, onChange, suggested }) {
+  const [custom, setCustom] = React.useState('');
+  return (
+    <div style={{ padding: 14, background: 'var(--bg-sunk)', borderRadius: 8 }}>
+      {/* 建議圖示 */}
+      {suggested && suggested.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6, fontWeight: 600 }}>建議 · Suggested</div>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {suggested.map((i) => (
+              <button key={i} onClick={() => onChange(i)} className="btn" style={{
+                width: 36, height: 36, padding: 0, fontFamily: 'var(--serif)', fontSize: 16,
+                background: icon === i ? color : 'var(--bg-card)',
+                color: icon === i ? 'white' : 'var(--ink)',
+                borderColor: icon === i ? color : 'var(--line)',
+              }}>{i}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* 自訂 */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input className="input" placeholder="貼上任何符號 / emoji / 文字" value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          style={{ flex: 1, fontFamily: 'var(--serif)' }} />
+        <button className="btn" onClick={() => {
+          const chars = Array.from(custom.trim());
+          if (chars.length > 0) { onChange(chars[0]); setCustom(''); }
+        }}>套用</button>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6, fontWeight: 600 }}>圖示庫 · {ICON_LIBRARY.length} 個</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
+        {ICON_LIBRARY.map((i, idx) => (
+          <button key={i + idx} onClick={() => onChange(i)} style={{
+            width: '100%', aspectRatio: '1', borderRadius: 6,
+            background: icon === i ? color : 'var(--bg-card)',
+            color: icon === i ? 'white' : 'var(--ink-2)',
+            border: icon === i ? '2px solid ' + color : '1px solid var(--line-soft)',
+            fontFamily: 'var(--serif)', fontSize: 16, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+          }}>{i}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── 顏色工具 ──
 function hexToHSL(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -316,4 +352,4 @@ function hslToHex(h, s, l) {
   return '#' + toHex(f(0)) + toHex(f(8)) + toHex(f(4));
 }
 
-Object.assign(window, { CategoriesPage, HSLSlider, ICON_LIBRARY, COLOR_PRESETS, hexToHSL, hslToHex });
+Object.assign(window, { CategoriesPage, HSLSlider, ICON_LIBRARY, COLOR_PRESETS, hexToHSL, hslToHex, RichColorPicker, RichIconPicker });

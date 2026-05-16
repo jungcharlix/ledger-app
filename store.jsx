@@ -93,6 +93,9 @@ const DEFAULT_CATEGORIES = {
     { id: 'health', label: '醫療', en: 'Health', icon: '✚', color: '#5E8B7A' },
     { id: 'subscription', label: '訂閱', en: 'Subscription', icon: '↻', color: '#7A6B8B' },
     { id: 'travel', label: '旅遊', en: 'Travel', icon: '✈', color: '#4A7A8B' },
+    { id: 'ai', label: 'AI', en: 'AI Tools', icon: '⚛', color: '#5E6A8B' },
+    { id: 'family', label: '孝親', en: 'Family', icon: '♥', color: '#B85C38' },
+    { id: 'social', label: '人際', en: 'Social', icon: '☘', color: '#8FAA78' },
     { id: 'other', label: '其他', en: 'Other', icon: '○', color: '#8B8478' },
   ],
   income: [

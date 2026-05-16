@@ -73,7 +73,7 @@ function WastePage({ ledger }) {
     .sort((a, b) => b.amount - a.amount);
 
   // 計算可以「省下」的等價物
-  const equivalents = computeEquivalents(wastedTotal);
+  const equivalents = computeEquivalents(wastedTotal, state.transactions, state.fxRate);
 
   // 大型支出（候選浪費名單）
   const sortedAll = [...nonWaste].sort((a, b) =>
@@ -131,9 +131,12 @@ function WastePage({ ledger }) {
                 如果省下來可以…
               </div>
               {equivalents.map((eq, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: 0.92 }}>
-                  <span style={{ fontFamily: 'var(--serif)', fontSize: 18, color: '#D87C58' }}>{eq.glyph}</span>
-                  <span style={{ fontSize: 14 }}>{eq.text}</span>
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, opacity: 0.92 }}>
+                  <span style={{ fontFamily: 'var(--serif)', fontSize: 20, color: '#D87C58', flexShrink: 0, marginTop: 2 }}>{eq.glyph}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, lineHeight: 1.4 }}>{eq.text}</div>
+                    {eq.sub && <div style={{ fontSize: 11, opacity: 0.55, marginTop: 2, fontFamily: 'var(--mono)' }}>{eq.sub}</div>}
+                  </div>
                 </div>
               ))}
             </div>
@@ -359,30 +362,91 @@ function WasteMarkModal({ txn, ledger, onClose }) {
   );
 }
 
-// ── 等價物換算（如果省下來可以買什麼）──
-function computeEquivalents(amount) {
+// ── 等價物換算（從使用者真實消費歷史推算）──
+function computeEquivalents(amount, transactions, fxRate) {
   if (amount <= 0) return [];
-  const candidates = [
-    { unit: 130, glyph: '☕', label: '杯星巴克美式咖啡' },
-    { unit: 280, glyph: '◐', label: '張電影票' },
-    { unit: 89, glyph: '◆', label: '本書' },
-    { unit: 1500, glyph: '↗', label: '次台北–台中高鐵' },
+
+  // ① 從發票品項提取常買單品（含品項名稱與單價）
+  const itemMap = {};
+  (transactions || []).forEach((t) => {
+    if (!t.items) return;
+    t.items.forEach((it) => {
+      if (!it.price || it.price <= 0) return;
+      const key = (it.name || '').replace(/\s*\d+(\.\d+)?(ml|公升|L|入|顆|杯|大|中|小|×\d+)\s*/gi, ' ').replace(/\s+/g, ' ').trim();
+      if (!key) return;
+      if (!itemMap[key]) itemMap[key] = { name: key, totalPrice: 0, count: 0, qty: 0 };
+      itemMap[key].totalPrice += it.price * (it.qty || 1);
+      itemMap[key].count++;
+      itemMap[key].qty += it.qty || 1;
+    });
+  });
+  const userItems = Object.values(itemMap)
+    .map((i) => ({ ...i, avgPrice: i.totalPrice / Math.max(i.qty, 1) }))
+    .filter((i) => i.avgPrice >= 20 && i.avgPrice <= amount && i.count >= 2)
+    .sort((a, b) => b.count - a.count);
+
+  // ② 從交易商家平均消費
+  const merchantMap = {};
+  (transactions || []).forEach((t) => {
+    if (t.type !== 'expense' || !t.merchant) return;
+    if (!merchantMap[t.merchant]) merchantMap[t.merchant] = { name: t.merchant, total: 0, count: 0 };
+    merchantMap[t.merchant].total += convertTo(t.amount, t.currency, 'TWD', fxRate);
+    merchantMap[t.merchant].count++;
+  });
+  const userMerchants = Object.values(merchantMap)
+    .map((m) => ({ ...m, avgPrice: m.total / m.count }))
+    .filter((m) => m.avgPrice >= 30 && m.avgPrice <= amount && m.count >= 2)
+    .sort((a, b) => b.count - a.count);
+
+  // ③ 通用後備清單（沒有歷史時用）
+  const fallback = [
+    { unit: 60, glyph: '◐', label: '個便利商店便當' },
+    { unit: 130, glyph: '☕', label: '杯星巴克美式' },
+    { unit: 280, glyph: '◑', label: '張電影票' },
+    { unit: 1080, glyph: '↗', label: '次台北–嘉義高鐵' },
     { unit: 8000, glyph: '⌘', label: '副 AirPods Pro' },
-    { unit: 35000, glyph: '✈', label: '張東京來回機票' },
-  ].sort(() => Math.random() - 0.5);
+  ];
 
   const results = [];
-  for (const c of candidates) {
-    const n = Math.floor(amount / c.unit);
+
+  // 優先：使用者最常買的品項 (Top 2)
+  for (const it of userItems.slice(0, 2)) {
+    const n = Math.floor(amount / it.avgPrice);
     if (n >= 1) {
-      results.push({ glyph: c.glyph, text: `${n.toLocaleString()} ${c.label}` });
-      if (results.length >= 3) break;
+      results.push({
+        glyph: '◈', text: `${n.toLocaleString()} 件「${truncate(it.name, 12)}」`,
+        sub: `平均 NT$${Math.round(it.avgPrice)} · 你共買過 ${it.qty} 次`,
+      });
+    }
+    if (results.length >= 2) break;
+  }
+
+  // 加一個常去商家
+  if (userMerchants.length > 0 && results.length < 3) {
+    const m = userMerchants[0];
+    const n = Math.floor(amount / m.avgPrice);
+    if (n >= 1) {
+      results.push({
+        glyph: '⌂', text: `${n.toLocaleString()} 次「${truncate(m.name, 12)}」`,
+        sub: `平均單次 NT$${Math.round(m.avgPrice)} · 你共消費 ${m.count} 次`,
+      });
     }
   }
-  if (results.length === 0) {
-    results.push({ glyph: '◇', text: '雖然不多，但都是浪費' });
+
+  // 不夠就補通用
+  for (const c of fallback) {
+    if (results.length >= 3) break;
+    const n = Math.floor(amount / c.unit);
+    if (n >= 1) {
+      results.push({ glyph: c.glyph, text: `${n.toLocaleString()} ${c.label}`, sub: `NT$${c.unit} / 個` });
+    }
   }
-  return results;
+
+  return results.slice(0, 3);
+}
+
+function truncate(s, n) {
+  return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
 // ── 反省訊息生成 ──

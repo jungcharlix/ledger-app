@@ -63,8 +63,8 @@ function AccountEditor({ ledger, accountId, onClose }) {
   const [opening, setOpening] = useStateA(String(existing?.opening || 0));
   const [dual, setDual] = useStateA(!!existing?.dualCurrency);
 
-  const colors = ['#C66D4A', '#4A7A8B', '#7A8B5C', '#B8895E', '#A35E7A', '#5E8B7A', '#8B6F47', '#7A6B8B'];
-  const icons = ['◈', '◇', '◆', '★', '島', '◐', '▢', '◉'];
+  const suggestedColors = ['#C66D4A', '#4A7A8B', '#7A8B5C', '#B8895E', '#A35E7A', '#5E8B7A', '#8B6F47', '#7A6B8B', '#5E6A8B', '#D87C58', '#A8B580', '#D4A659'];
+  const suggestedIcons = ['◈', '◇', '◆', '★', '島', '◐', '▢', '◉', '⌂', '✈', '⚐', '☘', '錢', '家', '車', '心'];
 
   const save = () => {
     if (!name.trim()) { showToast('請輸入名稱'); return; }
@@ -77,11 +77,27 @@ function AccountEditor({ ledger, accountId, onClose }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>
         <div style={{ padding: 24, borderBottom: '1px solid var(--line-soft)' }}>
           <div className="page-eyebrow">{accountId ? 'Edit Account' : 'New Account'}</div>
           <h2 className="font-serif" style={{ fontSize: 26, margin: '6px 0 0', fontWeight: 500 }}>{accountId ? '編輯帳戶' : '新增帳戶'}</h2>
         </div>
+
+        {/* 預覽 */}
+        <div style={{ padding: 20, background: 'var(--bg-sunk)', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 14,
+            background: color, color: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: 'var(--serif)', fontSize: 26,
+            boxShadow: '0 4px 12px ' + color + '40',
+          }}>{icon}</div>
+          <div>
+            <div className="font-serif" style={{ fontSize: 18, fontWeight: 500 }}>{name || '帳戶名稱'}</div>
+            <div className="muted" style={{ fontSize: 12 }}>{en || 'Account name'} · {currency} · {color.toUpperCase()}</div>
+          </div>
+        </div>
+
         <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="field"><span className="field-label">名稱</span><input className="input" placeholder="台灣帳戶" value={name} onChange={(e) => setName(e.target.value)} /></div>
@@ -99,25 +115,12 @@ function AccountEditor({ ledger, accountId, onClose }) {
             </div>
           </div>
           <div className="field">
-            <span className="field-label">顏色</span>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {colors.map((c) => (
-                <button key={c} onClick={() => setColor(c)} style={{ width: 32, height: 32, borderRadius: 8, background: c, border: color === c ? '3px solid var(--ink)' : '1px solid var(--line)', cursor: 'pointer' }} />
-              ))}
-            </div>
+            <span className="field-label">顏色 · Color</span>
+            <RichColorPicker color={color} onChange={setColor} presets={suggestedColors} />
           </div>
           <div className="field">
-            <span className="field-label">圖示</span>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {icons.map((i) => (
-                <button key={i} onClick={() => setIcon(i)} className="btn" style={{
-                  width: 38, height: 38, padding: 0, fontFamily: 'var(--serif)', fontSize: 16,
-                  background: icon === i ? color : 'var(--bg-card)',
-                  color: icon === i ? 'white' : 'var(--ink)',
-                  borderColor: icon === i ? color : 'var(--line)',
-                }}>{i}</button>
-              ))}
-            </div>
+            <span className="field-label">圖示 · Icon</span>
+            <RichIconPicker icon={icon} color={color} onChange={setIcon} suggested={suggestedIcons} />
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
             <input type="checkbox" checked={dual} onChange={(e) => setDual(e.target.checked)} />
