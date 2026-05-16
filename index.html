@@ -21,6 +21,8 @@
 <script type="text/babel" src="pages-transactions.jsx"></script>
 <script type="text/babel" src="pages-accounts-reports.jsx"></script>
 <script type="text/babel" src="pages-report-view.jsx"></script>
+<script type="text/babel" src="pages-categories.jsx"></script>
+<script type="text/babel" src="pages-waste.jsx"></script>
 <script type="text/babel" src="pages-invoice-data.jsx"></script>
 <script type="text/babel" src="pages-invoice-analytics.jsx"></script>
 <script type="text/babel" src="pages-invoice.jsx"></script>
@@ -56,6 +58,11 @@ function App() {
     }
   }, [t.darkMode, t.accentHue, t.serifTitles, t.cardRadius]);
 
+  // 同步動態分類到 window，讓 findCategory 可以讀取
+  React.useEffect(() => {
+    window.__categories = ledger.state.categories;
+  }, [ledger.state.categories]);
+
   const nav = (target) => {
     if (typeof target === 'object' && target.name === 'add') {
       setAddPrefill(target.prefill);
@@ -72,7 +79,9 @@ function App() {
     { id: 'accounts', glyph: '▢', label: '帳戶', en: 'Accounts' },
     { id: 'reports', glyph: '◍', label: '報告', en: 'Reports' },
     { id: 'budgets', glyph: '◇', label: '預算', en: 'Budgets' },
+    { id: 'waste', glyph: '⛑', label: '浪費檢討', en: 'Waste' },
     { id: 'invoice', glyph: '◱', label: '電子發票', en: 'Invoice' },
+    { id: 'categories', glyph: '◈', label: '分類管理', en: 'Categories' },
     { id: 'settings', glyph: '✦', label: '設定', en: 'Settings' },
   ];
 
@@ -91,8 +100,10 @@ function App() {
   else if (route.startsWith('account:')) page = <AccountDetailPage ledger={ledger} accountId={route.slice(8)} onNav={nav} />;
   else if (route === 'reports') page = <ReportsPage ledger={ledger} />;
   else if (route === 'budgets') page = <BudgetsPage ledger={ledger} />;
+  else if (route === 'waste') page = <WastePage ledger={ledger} />;
+  else if (route === 'categories') page = <CategoriesPage ledger={ledger} />;
   else if (route === 'invoice') page = <InvoicePage ledger={ledger} onNav={nav} />;
-  else if (route === 'settings') page = <SettingsPage ledger={ledger} onOpenReport={() => setShowReport(true)} />;
+  else if (route === 'settings') page = <SettingsPage ledger={ledger} onOpenReport={() => setShowReport(true)} appearance={t} setAppearance={setTweak} />;
 
   // density
   const densityStyles = t.density === 'compact'

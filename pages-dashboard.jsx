@@ -244,16 +244,29 @@ function TxnRow({ txn, ledger, onClick }) {
   const cat = findCategory(txn.category, txn.type === 'income' ? 'income' : 'expense');
   const isIncome = txn.type === 'income' || txn.type === 'transfer-in';
   const isTransfer = txn.type === 'transfer-out' || txn.type === 'transfer-in';
+  const isExpense = txn.type === 'expense';
   const altCur = txn.currency === 'TWD' ? 'USD' : 'TWD';
   const altAmount = convertTo(txn.amount, txn.currency, altCur, ledger.state.fxRate);
+  const [showWasteModal, setShowWasteModal] = React.useState(false);
 
   return (
-    <div className="txn-row" onClick={onClick}>
-      <div className="txn-icon" style={{ background: isTransfer ? 'var(--ink-3)' : cat.color }}>
+    <div className="txn-row" onClick={onClick} style={{ gridTemplateColumns: '36px 1fr auto auto auto' }}>
+      <div className="txn-icon" style={{ background: isTransfer ? 'var(--ink-3)' : cat.color, position: 'relative' }}>
         {isTransfer ? '⇄' : cat.icon}
+        {txn.waste && (
+          <span style={{
+            position: 'absolute', top: -4, right: -4, width: 14, height: 14, borderRadius: '50%',
+            background: 'var(--negative)', color: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 9, fontWeight: 700, border: '2px solid var(--bg-card)',
+          }}>!</span>
+        )}
       </div>
       <div className="txn-main">
-        <div className="txn-note">{txn.note || cat.label}</div>
+        <div className="txn-note">
+          {txn.note || cat.label}
+          {txn.waste && <span style={{ color: 'var(--negative)', marginLeft: 6, fontSize: 11 }}>· 已標記浪費</span>}
+        </div>
         <div className="txn-meta">
           <span>{relTime(txn.date)}</span>
           <span className="divider-dot">·</span>
@@ -271,7 +284,23 @@ function TxnRow({ txn, ledger, onClick }) {
         </div>
         <div className="txn-aux">≈ {fmtMoney(altAmount, altCur, { sign: false })}</div>
       </div>
+      {isExpense && (
+        <button
+          className="btn btn-ghost btn-icon"
+          title={txn.waste ? '取消浪費標記' : '標記為浪費'}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (txn.waste) { ledger.unmarkWaste(txn.id); showToast('已取消'); }
+            else setShowWasteModal(true);
+          }}
+          style={{ color: txn.waste ? 'var(--negative)' : 'var(--ink-4)', fontSize: 13 }}
+        >⚑</button>
+      )}
       <button className="btn btn-ghost btn-icon" title="刪除" onClick={(e) => { e.stopPropagation(); if (confirm('刪除這筆交易？')) { ledger.deleteTxn(txn.id); showToast('已刪除'); } }}>×</button>
+
+      {showWasteModal && window.WasteMarkModal && (
+        <WasteMarkModal txn={txn} ledger={ledger} onClose={() => setShowWasteModal(false)} />
+      )}
     </div>
   );
 }

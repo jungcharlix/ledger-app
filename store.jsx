@@ -90,13 +90,19 @@ function seed() {
 
   const carrier = {
     connected: false,
-    code: '',           // 手機條碼 /XXXXXXX
+    code: '',
     autoSync: false,
     lastSync: null,
     syncCount: 0,
   };
 
-  return { accounts, transactions: txns, budgets, recurring, fxRate: 31.8, carrier };
+  return {
+    accounts, transactions: txns, budgets, recurring, fxRate: 31.8, carrier,
+    categories: {
+      expense: DEFAULT_CATEGORIES.expense.map((c) => ({ ...c })),
+      income: DEFAULT_CATEGORIES.income.map((c) => ({ ...c })),
+    },
+  };
 }
 
 function loadState() {
@@ -166,6 +172,36 @@ function useLedger() {
     ...s,
     carrier: { ...(s.carrier || {}), ...patch },
   }));
+
+  // 分類管理
+  const addCategory = (type, cat) => setState((s) => {
+    const cats = s.categories || { expense: DEFAULT_CATEGORIES.expense, income: DEFAULT_CATEGORIES.income };
+    const newCat = { ...cat, id: cat.id || ('c' + Date.now().toString(36)) };
+    return { ...s, categories: { ...cats, [type]: [...(cats[type] || []), newCat] } };
+  });
+  const updateCategory = (type, id, patch) => setState((s) => {
+    const cats = s.categories || { expense: DEFAULT_CATEGORIES.expense, income: DEFAULT_CATEGORIES.income };
+    return { ...s, categories: { ...cats, [type]: cats[type].map((c) => c.id === id ? { ...c, ...patch } : c) } };
+  });
+  const deleteCategory = (type, id, migrateTo) => setState((s) => {
+    const cats = s.categories || { expense: DEFAULT_CATEGORIES.expense, income: DEFAULT_CATEGORIES.income };
+    const target = migrateTo || (type === 'income' ? 'other-income' : 'other');
+    return {
+      ...s,
+      categories: { ...cats, [type]: cats[type].filter((c) => c.id !== id) },
+      transactions: s.transactions.map((t) => t.category === id ? { ...t, category: target } : t),
+    };
+  });
+
+  // 浪費標記
+  const markWaste = (id, reason = '') => setState((s) => ({
+    ...s,
+    transactions: s.transactions.map((t) => t.id === id ? { ...t, waste: true, wasteReason: reason || t.wasteReason || '' } : t),
+  }));
+  const unmarkWaste = (id) => setState((s) => ({
+    ...s,
+    transactions: s.transactions.map((t) => t.id === id ? { ...t, waste: false, wasteReason: '' } : t),
+  }));
   const reset = () => { localStorage.removeItem(LEDGER_KEY); setState(seed()); };
 
   return {
@@ -176,6 +212,8 @@ function useLedger() {
     setBudget, deleteBudget,
     setFx, reset,
     updateCarrier,
+    addCategory, updateCategory, deleteCategory,
+    markWaste, unmarkWaste,
   };
 }
 
@@ -209,8 +247,25 @@ function accountBalance(account, transactions, fxRate) {
 }
 
 function findCategory(catId, type) {
+  // 優先讀取動態分類（user 自訂後 App 會塞到 window.__categories）
+  const dyn = (typeof window !== 'undefined' && window.__categories) || null;
+  if (dyn) {
+    const list = type === 'income' ? dyn.income : dyn.expense;
+    const found = list?.find((c) => c.id === catId);
+    if (found) return found;
+    // 也檢查另一邊（避免 income/expense 標反）
+    const other = type === 'income' ? dyn.expense : dyn.income;
+    const otherFound = other?.find((c) => c.id === catId);
+    if (otherFound) return otherFound;
+  }
   const list = type === 'income' ? DEFAULT_CATEGORIES.income : DEFAULT_CATEGORIES.expense;
   return list.find((c) => c.id === catId) || { id: catId, label: catId, en: catId, icon: '○', color: '#8B8478' };
+}
+
+function getCats(type) {
+  const dyn = (typeof window !== 'undefined' && window.__categories) || null;
+  if (dyn) return type === 'income' ? (dyn.income || []) : (dyn.expense || []);
+  return type === 'income' ? DEFAULT_CATEGORIES.income : DEFAULT_CATEGORIES.expense;
 }
 
 function findAccount(accs, id) {
@@ -239,6 +294,6 @@ function relTime(dateStr) {
 
 Object.assign(window, {
   useLedger, fmtMoney, convertTo, accountBalance,
-  findCategory, findAccount, DEFAULT_CATEGORIES,
+  findCategory, findAccount, DEFAULT_CATEGORIES, getCats,
   ymd, ym, relTime, seed,
 });

@@ -17,11 +17,11 @@ function AddTransactionPage({ ledger, onDone, prefill }) {
 
   React.useEffect(() => {
     setCurrency(acc.currency);
-    if (type === 'income' && !DEFAULT_CATEGORIES.income.find((c) => c.id === category)) setCategory('salary');
-    if (type === 'expense' && !DEFAULT_CATEGORIES.expense.find((c) => c.id === category)) setCategory('food');
+    if (type === 'income' && !getCats('income').find((c) => c.id === category)) setCategory(getCats('income')[0]?.id || 'salary');
+    if (type === 'expense' && !getCats('expense').find((c) => c.id === category)) setCategory(getCats('expense')[0]?.id || 'food');
   }, [account, type]);
 
-  const cats = type === 'income' ? DEFAULT_CATEGORIES.income : DEFAULT_CATEGORIES.expense;
+  const cats = getCats(type);
 
   const submit = () => {
     const amt = parseFloat(amount);
@@ -333,10 +333,10 @@ function TransactionsPage({ ledger, onNav }) {
         <select className="select" value={filterCat} onChange={(e) => setFilterCat(e.target.value)} style={{ minWidth: 140 }}>
           <option value="all">所有分類</option>
           <optgroup label="支出">
-            {DEFAULT_CATEGORIES.expense.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {getCats('expense').map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </optgroup>
           <optgroup label="收入">
-            {DEFAULT_CATEGORIES.income.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {getCats('income').map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </optgroup>
         </select>
         {(search || filterAcc !== 'all' || filterType !== 'all' || filterCat !== 'all') &&

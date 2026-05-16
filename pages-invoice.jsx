@@ -569,7 +569,7 @@ function InvoiceConfirm({ invoice, ledger, onCancel, onConfirm }) {
           <div className="field" style={{ marginBottom: 18 }}>
             <span className="field-label">分類 {guess.hint && <span style={{ color: 'var(--positive)', fontWeight: 400, textTransform: 'none', letterSpacing: 'normal', marginLeft: 6 }}>· 已自動辨識：{guess.hint}</span>}</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
-              {DEFAULT_CATEGORIES.expense.slice(0, 8).map((c) => (
+              {getCats('expense').slice(0, 8).map((c) => (
                 <button key={c.id} className="btn" onClick={() => setCategory(c.id)} style={{
                   padding: '8px 10px', justifyContent: 'flex-start',
                   borderColor: category === c.id ? c.color : 'var(--line)',

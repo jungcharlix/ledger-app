@@ -482,7 +482,7 @@ function BudgetEditor({ ledger, budgetId, onClose }) {
           <div className="field">
             <span className="field-label">分類</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(98px, 1fr))', gap: 8 }}>
-              {DEFAULT_CATEGORIES.expense.map((c) => (
+              {getCats('expense').map((c) => (
                 <button key={c.id} className="btn" onClick={() => setCategory(c.id)} style={{
                   flexDirection: 'column', padding: '12px 6px', gap: 6,
                   borderColor: category === c.id ? c.color : 'var(--line)',
@@ -513,7 +513,7 @@ function BudgetEditor({ ledger, budgetId, onClose }) {
 }
 
 // ── SETTINGS ───────────────────────────────────────────────────────────
-function SettingsPage({ ledger, onOpenReport }) {
+function SettingsPage({ ledger, onOpenReport, appearance, setAppearance }) {
   const { state } = ledger;
   const [fx, setFx] = useStateA(String(state.fxRate));
   const [importPreview, setImportPreview] = useStateA(null);
@@ -605,13 +605,95 @@ function SettingsPage({ ledger, onOpenReport }) {
         <div>
           <div className="page-eyebrow">Settings · 設定</div>
           <h1 className="page-title">設定與資料</h1>
-          <div className="page-subtitle">匯率、週期性收支、匯入匯出、報表產出</div>
+          <div className="page-subtitle">外觀、匯率、週期性收支、匯入匯出、報表產出</div>
         </div>
       </div>
 
+      {/* 外觀偏好 — 使用者可調整 */}
+      {appearance && setAppearance && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">
+            <div>
+              <h3 className="card-title">外觀偏好</h3>
+              <div className="card-sub" style={{ marginTop: 4 }}>Appearance · 調整後自動儲存</div>
+            </div>
+          </div>
+          <div style={{ padding: 24, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24 }}>
+            {/* 主題 */}
+            <div className="field">
+              <span className="field-label">主題模式</span>
+              <div className="seg">
+                <button className={'seg-btn ' + (!appearance.darkMode ? 'active' : '')} onClick={() => setAppearance('darkMode', false)}>☀ 淺色</button>
+                <button className={'seg-btn ' + (appearance.darkMode ? 'active' : '')} onClick={() => setAppearance('darkMode', true)}>☾ 深色</button>
+              </div>
+            </div>
+
+            {/* 主色 */}
+            <div className="field">
+              <span className="field-label">主色調 · {Math.round(appearance.accentHue)}°</span>
+              <div style={{ position: 'relative', height: 28, borderRadius: 8, overflow: 'hidden',
+                background: 'linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)' }}>
+                <input type="range" min="0" max="360" value={appearance.accentHue}
+                  onChange={(e) => setAppearance('accentHue', Number(e.target.value))}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', margin: 0, opacity: 0, cursor: 'pointer' }} />
+                <div style={{
+                  position: 'absolute', top: -2, height: 32, width: 4, borderRadius: 2,
+                  background: 'white', boxShadow: '0 0 0 1px rgba(0,0,0,0.5)',
+                  left: `calc(${(appearance.accentHue / 360) * 100}% - 2px)`, pointerEvents: 'none',
+                }} />
+              </div>
+            </div>
+
+            {/* 圓角 */}
+            <div className="field">
+              <span className="field-label">卡片圓角 · {appearance.cardRadius}px</span>
+              <input type="range" min="0" max="24" step="1" value={appearance.cardRadius}
+                onChange={(e) => setAppearance('cardRadius', Number(e.target.value))}
+                style={{ width: '100%', accentColor: 'var(--accent)' }} />
+            </div>
+
+            {/* 密度 */}
+            <div className="field">
+              <span className="field-label">版面密度</span>
+              <div className="seg">
+                {[
+                  { id: 'compact', label: '緊湊' },
+                  { id: 'cozy', label: '舒適' },
+                  { id: 'comfy', label: '寬鬆' },
+                ].map((o) => (
+                  <button key={o.id} className={'seg-btn ' + (appearance.density === o.id ? 'active' : '')}
+                    onClick={() => setAppearance('density', o.id)}>{o.label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* 襯線 */}
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '10px 14px', background: 'var(--bg-sunk)', borderRadius: 8 }}>
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>襯線標題</div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>大標使用 Newsreader 襯線體</div>
+              </div>
+              <input type="checkbox" checked={!!appearance.serifTitles}
+                onChange={(e) => setAppearance('serifTitles', e.target.checked)}
+                style={{ width: 18, height: 18, accentColor: 'var(--accent)' }} />
+            </label>
+
+            {/* 換算金額 */}
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '10px 14px', background: 'var(--bg-sunk)', borderRadius: 8 }}>
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>顯示雙幣換算</div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>交易列表下方顯示 ≈ 換算金額</div>
+              </div>
+              <input type="checkbox" checked={!!appearance.showAuxAmount}
+                onChange={(e) => setAppearance('showAuxAmount', e.target.checked)}
+                style={{ width: 18, height: 18, accentColor: 'var(--accent)' }} />
+            </label>
+          </div>
+        </div>
+      )}
+
       {/* 視覺化報表 */}
-      <div className="card" style={{ marginBottom: 16, background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--accent-soft) 200%)' }}>
-        <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, alignItems: 'center' }}>
+      <div className="card" style={{ marginBottom: 16, background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--accent-soft) 200%)' }}>        <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, alignItems: 'center' }}>
           <div>
             <div className="page-eyebrow" style={{ marginBottom: 6 }}>Visual Report · 視覺化報表</div>
             <h3 className="font-serif" style={{ fontSize: 22, fontWeight: 500, margin: '0 0 6px' }}>產出完整圖表報表</h3>
